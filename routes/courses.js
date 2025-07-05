@@ -1,19 +1,28 @@
 const express = require('express');
+const { body } = require('express-validator');
+const CourseController = require('../controllers/courseController');
+const { requireRole } = require('../middleware/auth');
+
 const router = express.Router();
 
-// Rutas temporales - implementar controllers después
-router.get('/', (req, res) => {
-  res.render('courses/index', {
-    title: 'Cursos',
-    courses: []
-  });
-});
+// Validaciones
+const enrollCodeValidation = [
+  body('enrollment_code')
+    .isLength({ min: 6, max: 20 })
+    .withMessage('El código debe tener entre 6 y 20 caracteres')
+    .trim()
+];
 
-router.get('/:id', (req, res) => {
-  res.render('courses/show', {
-    title: 'Detalle del Curso',
-    course: { id: req.params.id, title: 'Curso de Ejemplo' }
-  });
-});
+// Rutas principales
+router.get('/', CourseController.index);
+router.get('/my-courses', CourseController.myCourses);
+
+// Rutas de matrícula
+router.post('/enroll-with-code', requireRole('student'), enrollCodeValidation, CourseController.enrollWithCode);
+router.post('/:id/enroll', requireRole('student'), CourseController.enroll);
+
+// Rutas de curso específico
+router.get('/:id', CourseController.show);
+router.get('/:courseId/unit/:unitId', CourseController.showUnit);
 
 module.exports = router;

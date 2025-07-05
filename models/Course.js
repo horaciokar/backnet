@@ -86,55 +86,7 @@ const Course = sequelize.define('Course', {
     }
   }
 }, {
-  tableName: 'courses',
-  
-  indexes: [
-    {
-      fields: ['title']
-    },
-    {
-      fields: ['category']
-    },
-    {
-      fields: ['is_active']
-    },
-    {
-      fields: ['created_by']
-    }
-  ]
+  tableName: 'courses'
 });
-
-// Métodos de instancia
-Course.prototype.getEnrollmentCount = async function() {
-  const { Enrollment } = require('./Enrollment');
-  return await Enrollment.count({
-    where: { course_id: this.id }
-  });
-};
-
-Course.prototype.getUnitsCount = async function() {
-  const CourseUnit = require('./CourseUnit');
-  return await CourseUnit.count({
-    where: { course_id: this.id }
-  });
-};
-
-// Métodos de clase
-Course.findActive = async function() {
-  return await this.findAll({
-    where: { is_active: true },
-    order: [['created_at', 'DESC']]
-  });
-};
-
-Course.findByCategory = async function(category) {
-  return await this.findAll({
-    where: { 
-      category,
-      is_active: true 
-    },
-    order: [['title', 'ASC']]
-  });
-};
 
 module.exports = Course;

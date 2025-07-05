@@ -1,3 +1,29 @@
+#!/bin/bash
+
+# Script para desactivar rate limiting en desarrollo
+echo "🚀 Desactivando rate limiting para desarrollo..."
+
+# Colores para output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+print_status() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# 1. ACTUALIZAR SERVER.JS PARA DESACTIVAR RATE LIMITING EN DESARROLLO
+print_status "Actualizando server.js para desactivar rate limiting..."
+cat > server.js << 'EOF'
 const express = require('express');
 const path = require('path');
 const session = require('express-session');
@@ -164,3 +190,111 @@ app.listen(PORT, '0.0.0.0', () => {
 });
 
 module.exports = app;
+EOF
+
+# 2. ASEGURAR QUE NODE_ENV ESTÉ EN DEVELOPMENT
+print_status "Configurando variables de entorno..."
+if grep -q "NODE_ENV=" .env; then
+    sed -i 's/NODE_ENV=.*/NODE_ENV=development/' .env
+else
+    echo "NODE_ENV=development" >> .env
+fi
+
+# 3. CREAR SCRIPT PARA LIMPIAR RATE LIMITING
+print_status "Creando script para gestionar rate limiting..."
+cat > manage-rate-limit.sh << 'EOF'
+#!/bin/bash
+
+# Script para gestionar rate limiting
+case "$1" in
+    "off"|"disable")
+        echo "🔓 Deshabilitando rate limiting..."
+        sed -i 's/NODE_ENV=.*/NODE_ENV=development/' .env
+        echo "✅ Rate limiting deshabilitado"
+        echo "🔄 Reinicia la aplicación: npm run dev"
+        ;;
+    "on"|"enable")
+        echo "🔒 Habilitando rate limiting..."
+        sed -i 's/NODE_ENV=.*/NODE_ENV=production/' .env
+        echo "✅ Rate limiting habilitado"
+        echo "🔄 Reinicia la aplicación: npm run dev"
+        ;;
+    "status")
+        NODE_ENV=$(grep NODE_ENV .env | cut -d '=' -f2)
+        if [ "$NODE_ENV" = "production" ]; then
+            echo "🔒 Rate limiting: HABILITADO"
+        else
+            echo "🔓 Rate limiting: DESHABILITADO"
+        fi
+        ;;
+    *)
+        echo "Uso: $0 {on|off|status}"
+        echo ""
+        echo "Comandos:"
+        echo "  on/enable  - Habilitar rate limiting"
+        echo "  off/disable - Deshabilitar rate limiting"
+        echo "  status     - Ver estado actual"
+        exit 1
+        ;;
+esac
+EOF
+chmod +x manage-rate-limit.sh
+
+# 4. CREAR SCRIPT DE RESTART RÁPIDO
+print_status "Creando script de restart rápido..."
+cat > quick-restart.sh << 'EOF'
+#!/bin/bash
+echo "🔄 Reinicio rápido de la aplicación..."
+
+# Matar procesos de Node.js relacionados con el proyecto
+pkill -f "node.*server.js" 2>/dev/null || true
+pkill -f "nodemon.*server.js" 2>/dev/null || true
+
+# Esperar un momento
+sleep 2
+
+# Verificar que NODE_ENV esté en development
+if ! grep -q "NODE_ENV=development" .env; then
+    echo "NODE_ENV=development" >> .env
+fi
+
+echo "🚀 Iniciando aplicación sin rate limiting..."
+npm run dev
+EOF
+chmod +x quick-restart.sh
+
+# 5. VERIFICAR CONFIGURACIÓN ACTUAL
+print_status "Verificando configuración actual..."
+echo "📋 Variables de entorno:"
+grep NODE_ENV .env || echo "NODE_ENV no configurado - se usará 'development'"
+
+echo ""
+echo "🔧 Estado del rate limiting:"
+NODE_ENV=$(grep NODE_ENV .env 2>/dev/null | cut -d '=' -f2 || echo "development")
+if [ "$NODE_ENV" = "production" ]; then
+    echo "🔒 Rate limiting: HABILITADO"
+else
+    echo "🔓 Rate limiting: DESHABILITADO"
+fi
+
+print_status "✅ Rate limiting configurado para desarrollo!"
+echo ""
+echo "🎯 Cambios realizados:"
+echo "   ✓ Rate limiting DESHABILITADO en desarrollo"
+echo "   ✓ Políticas de seguridad relajadas"
+echo "   ✓ Logging mejorado para debug"
+echo "   ✓ Ruta /status para monitoreo"
+echo ""
+echo "🚀 Para aplicar cambios:"
+echo "   ./quick-restart.sh"
+echo ""
+echo "🔧 Scripts disponibles:"
+echo "   ./manage-rate-limit.sh off  - Deshabilitar rate limiting"
+echo "   ./manage-rate-limit.sh on   - Habilitar rate limiting"
+echo "   ./manage-rate-limit.sh status - Ver estado"
+echo "   ./quick-restart.sh          - Reinicio rápido"
+echo ""
+echo "📊 Monitoreo:"
+echo "   http://tu-ip:3000/status - Estado de la aplicación"
+echo ""
+print_warning "⚠️  Ahora puedes probar todas las rutas sin límites"
