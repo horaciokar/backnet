@@ -15,16 +15,54 @@
         <div class="row">
             <div class="col-12">
                 <h1><i class="fas fa-clipboard-check"></i> Exámenes</h1>
-                <p class="lead">Revisa tus exámenes y calificaciones</p>
+                <p class="lead">Centro de exámenes de la plataforma</p>
                 
-                <div class="card">
+                <div class="alert alert-success" role="alert">
+                    <h5 class="alert-heading">🎉 ¡Ruta de exámenes funcionando!</h5>
+                    <p>La ruta /exams ya está configurada correctamente.</p>
+                    <hr>
+                    <p class="mb-0">Ahora puedes acceder a los exámenes desde tus cursos matriculados.</p>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-book text-primary"></i> Mis Cursos
+                                </h5>
+                                <p class="card-text">Ve a tus cursos para encontrar exámenes</p>
+                                <a href="/courses/my-courses" class="btn btn-primary">
+                                    <i class="fas fa-arrow-right"></i> Ver Mis Cursos
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-history text-info"></i> Historial
+                                </h5>
+                                <p class="card-text">Revisa tus exámenes anteriores</p>
+                                <a href="/exams/history" class="btn btn-info">
+                                    <i class="fas fa-list"></i> Ver Historial
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card mt-4">
                     <div class="card-body text-center">
-                        <i class="fas fa-file-alt fa-5x text-muted mb-3"></i>
-                        <h5 class="card-title">No hay exámenes disponibles</h5>
-                        <p class="card-text">Los exámenes aparecerán aquí cuando estés matriculado en cursos.</p>
-                        <a href="/courses" class="btn btn-primary">
-                            <i class="fas fa-book"></i> Ver Cursos
-                        </a>
+                        <h6>💡 Cómo encontrar exámenes:</h6>
+                        <ol class="text-start">
+                            <li>Ve a <strong>Mis Cursos</strong></li>
+                            <li>Entra a un curso matriculado</li>
+                            <li>Navega por las unidades del curso</li>
+                            <li>Los exámenes aparecerán en las unidades correspondientes</li>
+                        </ol>
                     </div>
                 </div>
             </div>

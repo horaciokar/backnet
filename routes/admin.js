@@ -1,16 +1,13 @@
 const express = require('express');
+const AdminController = require('../controllers/adminController');
 const { requireAdmin } = require('../middleware/auth');
+
 const router = express.Router();
 
-// Aplicar middleware de admin a todas las rutas
 router.use(requireAdmin);
 
-// Dashboard admin
-router.get('/dashboard', (req, res) => {
-  res.render('admin/dashboard', {
-    title: 'Panel de Administración',
-    stats: {}
-  });
-});
+router.get('/dashboard', AdminController.dashboard);
+router.get('/users', AdminController.users);
+router.post('/users/:userId/toggle-status', AdminController.toggleUserStatus);
 
 module.exports = router;

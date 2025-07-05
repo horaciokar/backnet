@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const Course = require('../models/Course');
 const CourseUnit = require('../models/CourseUnit');
 const { Enrollment, EnrollmentCode } = require('../models/Enrollment');
+const { Exam, ExamAttempt } = require('../models/Exam');
 const User = require('../models/User');
 
 class CourseController {
@@ -15,12 +16,10 @@ class CourseController {
       
       let whereClause = { is_active: true };
       
-      // Filtro por categoría
       if (category && ['networks', 'security', 'both'].includes(category)) {
         whereClause.category = category;
       }
       
-      // Filtro por búsqueda
       if (search) {
         whereClause[Op.or] = [
           { title: { [Op.like]: `%${search}%` } },
@@ -30,10 +29,14 @@ class CourseController {
       
       const courses = await Course.findAll({
         where: whereClause,
+        include: [{
+          model: User,
+          as: 'creator',
+          attributes: ['first_name', 'last_name']
+        }],
         order: [['created_at', 'DESC']]
       });
       
-      // Obtener matrículas del usuario
       const enrollments = await Enrollment.findAll({
         where: { user_id: user.id },
         attributes: ['course_id', 'progress']
@@ -69,9 +72,25 @@ class CourseController {
       const courseId = req.params.id;
       const user = req.user;
       
-      const course = await Course.findByPk(courseId);
+      const course = await Course.findOne({
+        where: { id: courseId, is_active: true },
+        include: [
+          {
+            model: User,
+            as: 'creator',
+            attributes: ['first_name', 'last_name']
+          },
+          {
+            model: CourseUnit,
+            as: 'units',
+            where: { is_active: true },
+            required: false,
+            order: [['order_number', 'ASC']]
+          }
+        ]
+      });
       
-      if (!course || !course.is_active) {
+      if (!course) {
         return res.status(404).render('error', {
           title: 'Curso no encontrado',
           error: 'El curso solicitado no existe o no está disponible',
@@ -79,37 +98,52 @@ class CourseController {
         });
       }
       
-      // Obtener unidades del curso
-      const units = await CourseUnit.findAll({
-        where: { course_id: courseId, is_active: true },
-        order: [['order_number', 'ASC']]
-      });
-      
-      // Verificar si el usuario está matriculado
       const enrollment = await Enrollment.findOne({
         where: { user_id: user.id, course_id: courseId }
       });
       
-      // Obtener estadísticas del curso
       const enrollmentCount = await Enrollment.count({
-        where: { course_id: courseId }
+        where: { course_id: courseId, is_active: true }
       });
       
-      const unitsCount = units.length;
-      
-      // Obtener creador del curso
-      const creator = await User.findByPk(course.created_by);
+      // Obtener exámenes para cada unidad
+      const unitsWithExams = [];
+      if (course.units) {
+        for (const unit of course.units) {
+          const exams = await Exam.findAll({
+            where: { unit_id: unit.id, is_active: true }
+          });
+          
+          const unitExams = [];
+          for (const exam of exams) {
+            const userAttempts = await ExamAttempt.findAll({
+              where: { user_id: user.id, exam_id: exam.id },
+              order: [['created_at', 'DESC']]
+            });
+            
+            unitExams.push({
+              ...exam.toJSON(),
+              userAttempts,
+              canAttempt: await exam.canUserAttempt(user.id),
+              bestScore: userAttempts.length > 0 ? Math.max(...userAttempts.map(a => a.score || 0)) : null
+            });
+          }
+          
+          unitsWithExams.push({
+            ...unit.toJSON(),
+            exams: unitExams
+          });
+        }
+      }
       
       res.render('courses/show', {
         title: course.title,
         course: {
           ...course.toJSON(),
-          creator,
-          units
+          units: unitsWithExams
         },
         enrollment,
         enrollmentCount,
-        unitsCount,
         isEnrolled: !!enrollment,
         user
       });
@@ -130,9 +164,6 @@ class CourseController {
       const courseId = req.params.id;
       const user = req.user;
       
-      console.log(`Usuario ${user.id} intenta matricularse en curso ${courseId}`);
-      
-      // Verificar si ya está matriculado
       const existingEnrollment = await Enrollment.findOne({
         where: { user_id: user.id, course_id: courseId }
       });
@@ -142,7 +173,6 @@ class CourseController {
         return res.redirect(`/courses/${courseId}`);
       }
       
-      // Verificar que el curso existe
       const course = await Course.findByPk(courseId);
       if (!course || !course.is_active) {
         return res.status(404).render('error', {
@@ -152,13 +182,10 @@ class CourseController {
         });
       }
       
-      // Crear matrícula
       await Enrollment.create({
         user_id: user.id,
         course_id: courseId
       });
-      
-      console.log(`Usuario ${user.id} matriculado exitosamente en curso ${courseId}`);
       
       req.session.message = '¡Te has matriculado exitosamente en el curso!';
       res.redirect(`/courses/${courseId}`);
@@ -173,12 +200,8 @@ class CourseController {
   // Matricularse con código
   static async enrollWithCode(req, res) {
     try {
-      console.log('Procesando matrícula con código...');
-      console.log('Body:', req.body);
-      
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        console.log('Errores de validación:', errors.array());
         req.session.error = errors.array()[0].msg;
         return res.redirect('/courses');
       }
@@ -186,9 +209,6 @@ class CourseController {
       const { enrollment_code } = req.body;
       const user = req.user;
       
-      console.log(`Buscando código: ${enrollment_code}`);
-      
-      // Buscar código
       const code = await EnrollmentCode.findOne({
         where: { 
           code: enrollment_code.toUpperCase(),
@@ -197,14 +217,10 @@ class CourseController {
       });
       
       if (!code) {
-        console.log('Código no encontrado');
         req.session.error = 'Código de matrícula inválido';
         return res.redirect('/courses');
       }
       
-      console.log('Código encontrado:', code.toJSON());
-      
-      // Verificar si el código puede ser usado
       if (code.used_count >= code.max_uses) {
         req.session.error = 'Código de matrícula agotado';
         return res.redirect('/courses');
@@ -215,7 +231,6 @@ class CourseController {
         return res.redirect('/courses');
       }
       
-      // Verificar si ya está matriculado
       const existingEnrollment = await Enrollment.findOne({
         where: { user_id: user.id, course_id: code.course_id }
       });
@@ -225,16 +240,12 @@ class CourseController {
         return res.redirect(`/courses/${code.course_id}`);
       }
       
-      // Usar código
       await code.increment('used_count');
       
-      // Crear matrícula
       await Enrollment.create({
         user_id: user.id,
         course_id: code.course_id
       });
-      
-      console.log(`Usuario ${user.id} matriculado con código en curso ${code.course_id}`);
       
       req.session.message = '¡Te has matriculado exitosamente con el código!';
       res.redirect(`/courses/${code.course_id}`);
@@ -253,28 +264,61 @@ class CourseController {
       
       const enrollments = await Enrollment.findAll({
         where: { user_id: user.id, is_active: true },
+        include: [{
+          model: Course,
+          as: 'course',
+          include: [{
+            model: User,
+            as: 'creator',
+            attributes: ['first_name', 'last_name']
+          }]
+        }],
         order: [['enrolled_at', 'DESC']]
       });
       
-      // Obtener cursos para cada matrícula
-      const enrollmentsWithCourses = [];
+      // Obtener estadísticas de exámenes por curso
+      const enrollmentsWithStats = [];
       for (const enrollment of enrollments) {
-        const course = await Course.findByPk(enrollment.course_id);
-        if (course) {
-          const creator = await User.findByPk(course.created_by);
-          enrollmentsWithCourses.push({
-            ...enrollment.toJSON(),
-            course: {
-              ...course.toJSON(),
-              creator
-            }
+        const courseUnits = await CourseUnit.findAll({
+          where: { course_id: enrollment.course_id, is_active: true }
+        });
+        
+        let totalExams = 0;
+        let completedExams = 0;
+        
+        for (const unit of courseUnits) {
+          const exams = await Exam.findAll({
+            where: { unit_id: unit.id, is_active: true }
           });
+          
+          totalExams += exams.length;
+          
+          for (const exam of exams) {
+            const bestAttempt = await ExamAttempt.findOne({
+              where: { 
+                user_id: user.id, 
+                exam_id: exam.id,
+                passed: true
+              },
+              order: [['score', 'DESC']]
+            });
+            
+            if (bestAttempt) {
+              completedExams++;
+            }
+          }
         }
+        
+        enrollmentsWithStats.push({
+          ...enrollment.toJSON(),
+          totalExams,
+          completedExams
+        });
       }
       
       res.render('courses/my-courses', {
         title: 'Mis Cursos',
-        enrollments: enrollmentsWithCourses,
+        enrollments: enrollmentsWithStats,
         user
       });
       
@@ -294,7 +338,6 @@ class CourseController {
       const { courseId, unitId } = req.params;
       const user = req.user;
       
-      // Verificar matrícula
       const enrollment = await Enrollment.findOne({
         where: { user_id: user.id, course_id: courseId }
       });
@@ -307,9 +350,11 @@ class CourseController {
         });
       }
       
-      const unit = await CourseUnit.findByPk(unitId);
+      const unit = await CourseUnit.findOne({
+        where: { id: unitId, course_id: courseId, is_active: true }
+      });
       
-      if (!unit || unit.course_id !== parseInt(courseId)) {
+      if (!unit) {
         return res.status(404).render('error', {
           title: 'Unidad no encontrada',
           error: 'La unidad solicitada no existe',
@@ -317,21 +362,38 @@ class CourseController {
         });
       }
       
-      // Obtener curso
       const course = await Course.findByPk(courseId);
       
-      // Obtener todas las unidades para navegación
       const allUnits = await CourseUnit.findAll({
         where: { course_id: courseId, is_active: true },
         order: [['order_number', 'ASC']]
       });
       
-      // Obtener siguiente y anterior
       const currentIndex = allUnits.findIndex(u => u.id === unit.id);
       const nextUnit = allUnits[currentIndex + 1] || null;
       const previousUnit = allUnits[currentIndex - 1] || null;
       
-      // Extraer ID de YouTube si es video
+      // Obtener exámenes de la unidad
+      const exams = await Exam.findAll({
+        where: { unit_id: unit.id, is_active: true }
+      });
+      
+      const examDetails = [];
+      for (const exam of exams) {
+        const userAttempts = await ExamAttempt.findAll({
+          where: { user_id: user.id, exam_id: exam.id },
+          order: [['created_at', 'DESC']]
+        });
+        
+        examDetails.push({
+          ...exam.toJSON(),
+          userAttempts,
+          canAttempt: await exam.canUserAttempt(user.id),
+          bestScore: userAttempts.length > 0 ? Math.max(...userAttempts.map(a => a.score || 0)) : null,
+          hasPassed: userAttempts.some(a => a.passed)
+        });
+      }
+      
       let videoId = null;
       if (unit.content_type === 'video' && unit.video_url) {
         const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
@@ -343,7 +405,8 @@ class CourseController {
         title: `${course.title} - ${unit.title}`,
         unit: {
           ...unit.toJSON(),
-          course
+          course,
+          exams: examDetails
         },
         allUnits,
         nextUnit,

@@ -14,30 +14,29 @@ const courseRoutes = require('./routes/courses');
 const examRoutes = require('./routes/exams');
 const forumRoutes = require('./routes/forum');
 const adminRoutes = require('./routes/admin');
+const instructorRoutes = require('./routes/instructor');
 
 // Importar middleware
 const { authenticateToken } = require('./middleware/auth');
 const { setupAssociations } = require('./models/associations');
+const { securityLogger, loginRateLimit } = require('./middleware/security');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
 
-// Rate limiting SOLO EN PRODUCCIÓN
+// Rate limiting
 if (process.env.NODE_ENV === 'production') {
     const limiter = rateLimit({
-        windowMs: 15 * 60 * 1000, // 15 minutos
-        max: 100, // máximo 100 requests por IP
+        windowMs: 15 * 60 * 1000,
+        max: 100,
         message: 'Demasiadas solicitudes, intenta de nuevo más tarde.'
     });
     app.use(limiter);
-    console.log('🔒 Rate limiting habilitado para producción');
-} else {
-    console.log('🔓 Rate limiting DESHABILITADO para desarrollo');
 }
 
-// Middleware de seguridad - relajado para desarrollo
+// Middleware de seguridad
 if (process.env.NODE_ENV === 'production') {
     app.use(helmet({
         contentSecurityPolicy: {
@@ -52,22 +51,14 @@ if (process.env.NODE_ENV === 'production') {
         }
     }));
 } else {
-    // Configuración muy permisiva para desarrollo
     app.use(helmet({
         contentSecurityPolicy: false,
         crossOriginEmbedderPolicy: false
     }));
-    console.log('🔓 Políticas de seguridad relajadas para desarrollo');
 }
 
 app.use(compression());
-
-// Logging diferente según entorno
-if (process.env.NODE_ENV === 'production') {
-    app.use(morgan('combined'));
-} else {
-    app.use(morgan('dev'));
-}
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // Configurar EJS
 app.set('view engine', 'ejs');
@@ -89,7 +80,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 horas
+        maxAge: 24 * 60 * 60 * 1000
     }
 }));
 
@@ -99,20 +90,23 @@ app.use((req, res, next) => {
     res.locals.message = req.session.message || null;
     res.locals.error = req.session.error || null;
     
-    // Limpiar mensajes después de mostrarlos
     delete req.session.message;
     delete req.session.error;
     
     next();
 });
 
+// Logging de seguridad
+app.use(securityLogger);
+
 // Rutas
-app.use('/auth', authRoutes);
+app.use('/auth', loginRateLimit, authRoutes);
 app.use('/dashboard', authenticateToken, dashboardRoutes);
 app.use('/courses', authenticateToken, courseRoutes);
 app.use('/exams', authenticateToken, examRoutes);
 app.use('/forum', authenticateToken, forumRoutes);
 app.use('/admin', authenticateToken, adminRoutes);
+app.use('/instructor', authenticateToken, instructorRoutes);
 
 // Ruta principal
 app.get('/', (req, res) => {
@@ -120,17 +114,6 @@ app.get('/', (req, res) => {
         return res.redirect('/dashboard');
     }
     res.render('index', { title: 'Plataforma Educativa' });
-});
-
-// Ruta de status para desarrollo
-app.get('/status', (req, res) => {
-    res.json({
-        status: 'OK',
-        environment: process.env.NODE_ENV || 'development',
-        rateLimiting: process.env.NODE_ENV === 'production',
-        timestamp: new Date().toISOString(),
-        uptime: process.uptime()
-    });
 });
 
 // Manejo de errores 404
@@ -159,8 +142,6 @@ setupAssociations();
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
     console.log(`🌐 Aplicación disponible en: http://0.0.0.0:${PORT}`);
-    console.log(`📊 Status: http://0.0.0.0:${PORT}/status`);
-    console.log(`🔧 Modo: ${process.env.NODE_ENV || 'development'}`);
 });
 
 module.exports = app;

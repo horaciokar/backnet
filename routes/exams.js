@@ -1,10 +1,17 @@
 const express = require('express');
 const ExamController = require('../controllers/examController');
-const { requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Rutas principales
+// Ruta principal de exámenes
+router.get('/', (req, res) => {
+  res.render('exams/index', {
+    title: 'Exámenes',
+    user: req.user
+  });
+});
+
+// Rutas específicas
 router.get('/history', ExamController.history);
 router.get('/:id', ExamController.show);
 router.post('/:id/start', ExamController.start);
